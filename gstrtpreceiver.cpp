@@ -17,68 +17,85 @@
 
 #define qDebug() std::cout
 
-namespace pipeline {
-    static std::string gst_create_rtp_caps(const VideoCodec& videoCodec){
+namespace pipeline
+{
+    static std::string gst_create_rtp_caps(const VideoCodec &videoCodec)
+    {
         std::stringstream ss;
-        if(videoCodec==VideoCodec::H264){
-            ss<<"caps=\"application/x-rtp, media=(string)video, encoding-name=(string)H264, payload=(int)96\"";
-        }else if(videoCodec==VideoCodec::H265){
-            ss<<"caps=\"application/x-rtp, media=(string)video, encoding-name=(string)H265\"";
+        if (videoCodec == VideoCodec::H264)
+        {
+            ss << "caps=\"application/x-rtp, media=(string)video, encoding-name=(string)H264, payload=(int)96\"";
+        }
+        else if (videoCodec == VideoCodec::H265)
+        {
+            ss << "caps=\"application/x-rtp, media=(string)video, encoding-name=(string)H265\"";
         }
         return ss.str();
     }
-    static std::string create_rtp_depacketize_for_codec(const VideoCodec& codec){
-        if(codec==VideoCodec::H264)return "rtph264depay ! ";
-        if(codec==VideoCodec::H265)return "rtph265depay ! ";
+    static std::string create_rtp_depacketize_for_codec(const VideoCodec &codec)
+    {
+        if (codec == VideoCodec::H264)
+            return "rtph264depay ! ";
+        if (codec == VideoCodec::H265)
+            return "rtph265depay ! ";
         assert(false);
         return "";
     }
-    static std::string create_parse_for_codec(const VideoCodec& codec){
+    static std::string create_parse_for_codec(const VideoCodec &codec)
+    {
         // config-interval=-1 = makes 100% sure each keyframe has SPS and PPS
-        if(codec==VideoCodec::H264)return "h264parse config-interval=-1 ! ";
-        if(codec==VideoCodec::H265)return "h265parse config-interval=-1  ! ";
+        if (codec == VideoCodec::H264)
+            return "h264parse config-interval=-1 ! ";
+        if (codec == VideoCodec::H265)
+            return "h265parse config-interval=-1  ! ";
         assert(false);
         return "";
     }
-    static std::string create_out_caps(const VideoCodec& codec){
-        if(codec==VideoCodec::H264){
+    static std::string create_out_caps(const VideoCodec &codec)
+    {
+        if (codec == VideoCodec::H264)
+        {
             std::stringstream ss;
-            ss<<"video/x-h264";
-            ss<<", stream-format=\"byte-stream\",alignment=nal";
-            //ss<<", alignment=\"nal\"";
-            ss<<" ! ";
+            ss << "video/x-h264";
+            ss << ", stream-format=\"byte-stream\",alignment=nal";
+            // ss<<", alignment=\"nal\"";
+            ss << " ! ";
             return ss.str();
-        }else if(codec==VideoCodec::H265){
+        }
+        else if (codec == VideoCodec::H265)
+        {
             std::stringstream ss;
-            ss<<"video/x-h265";
-            ss<<", stream-format=\"byte-stream\"";
-            //ss<<", alignment=\"nal\"";
-            ss<<" ! ";
+            ss << "video/x-h265";
+            ss << ", stream-format=\"byte-stream\"";
+            // ss<<", alignment=\"nal\"";
+            ss << " ! ";
             return ss.str();
         }
         assert(false);
     }
 }
 
-static void initGstreamerOrThrow() {
-    GError* error = nullptr;
-    if (!gst_init_check(nullptr, nullptr, &error)) {
+static void initGstreamerOrThrow()
+{
+    GError *error = nullptr;
+    if (!gst_init_check(nullptr, nullptr, &error))
+    {
         g_error_free(error);
         throw std::runtime_error("GStreamer initialization failed");
     }
 }
 
-GstRtpReceiver::GstRtpReceiver(int udp_port, const VideoCodec& codec)
+GstRtpReceiver::GstRtpReceiver(int udp_port, const VideoCodec &codec)
 {
-    m_port=udp_port;
-    m_video_codec=codec;
+    m_port = udp_port;
+    m_video_codec = codec;
     initGstreamerOrThrow();
 }
 
+GstRtpReceiver::~GstRtpReceiver() {}
 
-GstRtpReceiver::~GstRtpReceiver(){}
-
-static std::shared_ptr<std::vector<uint8_t>> gst_copy_buffer(GstBuffer* buffer){
+static std::shared_ptr<std::vector<uint8_t>> gst_copy_buffer(GstBuffer *buffer)
+{
     assert(buffer);
     const auto buff_size = gst_buffer_get_size(buffer);
     auto ret = std::make_shared<std::vector<uint8_t>>(buff_size);
@@ -90,19 +107,23 @@ static std::shared_ptr<std::vector<uint8_t>> gst_copy_buffer(GstBuffer* buffer){
     return ret;
 }
 
-static void loop_pull_appsink_samples(bool& keep_looping,GstElement *app_sink_element,
-                                      const GstRtpReceiver::NEW_FRAME_CALLBACK out_cb){
+static void loop_pull_appsink_samples(bool &keep_looping, GstElement *app_sink_element,
+                                      const GstRtpReceiver::NEW_FRAME_CALLBACK out_cb)
+{
     assert(app_sink_element);
     assert(out_cb);
-    const uint64_t timeout_ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(100)).count();
-    while (keep_looping){
-        //GstSample* sample = nullptr;
-        GstSample* sample= gst_app_sink_try_pull_sample(GST_APP_SINK(app_sink_element),timeout_ns);
-        if (sample) {
-            //gst_debug_sample(sample);
-            GstBuffer* buffer = gst_sample_get_buffer(sample);
-            if (buffer) {
-                auto buff_copy=gst_copy_buffer(buffer);
+    const uint64_t timeout_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(100)).count();
+    while (keep_looping)
+    {
+        // GstSample* sample = nullptr;
+        GstSample *sample = gst_app_sink_try_pull_sample(GST_APP_SINK(app_sink_element), timeout_ns);
+        if (sample)
+        {
+            // gst_debug_sample(sample);
+            GstBuffer *buffer = gst_sample_get_buffer(sample);
+            if (buffer)
+            {
+                auto buff_copy = gst_copy_buffer(buffer);
                 out_cb(buff_copy);
             }
             gst_sample_unref(sample);
@@ -110,81 +131,106 @@ static void loop_pull_appsink_samples(bool& keep_looping,GstElement *app_sink_el
     }
 }
 
-
 std::string GstRtpReceiver::construct_gstreamer_pipeline()
 {
+    // std::stringstream ss;
+    // ss<<"udpsrc port="<<m_port<<" "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ! ";
+    // ss<<pipeline::create_rtp_depacketize_for_codec(m_video_codec);
+    // ss<<pipeline::create_parse_for_codec(m_video_codec);
+    // ss<<pipeline::create_out_caps(m_video_codec);
+    // ss<<" appsink drop=true name=out_appsink";
+    // return ss.str();
+
     std::stringstream ss;
-    ss<<"udpsrc port="<<m_port<<" "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ! ";
-    ss<<pipeline::create_rtp_depacketize_for_codec(m_video_codec);
-    ss<<pipeline::create_parse_for_codec(m_video_codec);
-    ss<<pipeline::create_out_caps(m_video_codec);
-    ss<<" appsink drop=true name=out_appsink";
+
+    // 创建RTSP源，指定RTSP URL，注意m_port和m_video_codec分别是端口和视频编解码方式
+    ss << "rtspsrc location=rtsp://admin:123456@192.168.3.124:554/Streaming/Channels/101 ! ";
+
+    // 添加解包器，根据编解码器类型 H264 或 H265
+    ss << pipeline::create_rtp_depacketize_for_codec(m_video_codec);
+
+    // 添加解码器，H264/H265
+    ss << pipeline::create_parse_for_codec(m_video_codec);
+
+    // 添加输出的caps，确保解码后输出合适的格式
+    ss << pipeline::create_out_caps(m_video_codec);
+
+    // 通过 appsink 元素将解码后的帧送入 GStreamer 管道
+    ss << "appsink drop=true name=out_appsink";
+
     return ss.str();
 }
 
 void GstRtpReceiver::loop_pull_samples()
 {
     assert(m_app_sink_element);
-    auto cb=[this](std::shared_ptr<std::vector<uint8_t>> sample){
+    auto cb = [this](std::shared_ptr<std::vector<uint8_t>> sample)
+    {
         this->on_new_sample(sample);
     };
-    loop_pull_appsink_samples(m_pull_samples_run,m_app_sink_element,cb);
+    loop_pull_appsink_samples(m_pull_samples_run, m_app_sink_element, cb);
 }
 
-void GstRtpReceiver::on_new_sample(std::shared_ptr<std::vector<uint8_t> > sample)
+void GstRtpReceiver::on_new_sample(std::shared_ptr<std::vector<uint8_t>> sample)
 {
-    if(m_cb){
-        //debug_sample(sample);
+    if (m_cb)
+    {
+        // debug_sample(sample);
         m_cb(sample);
-    }else{
+    }
+    else
+    {
     }
 }
-
 
 void GstRtpReceiver::start_receiving(NEW_FRAME_CALLBACK cb)
 {
-    std::cout<<"GstRtpReceiver::start_receiving begin"<<std::endl;
-    assert(m_gst_pipeline==nullptr);
-    m_cb=cb;
+    std::cout << "GstRtpReceiver::start_receiving begin" << std::endl;
+    assert(m_gst_pipeline == nullptr);
+    m_cb = cb;
 
-    const auto pipeline=construct_gstreamer_pipeline();
+    const auto pipeline = construct_gstreamer_pipeline();
     GError *error = nullptr;
     m_gst_pipeline = gst_parse_launch(pipeline.c_str(), &error);
-    std::cout<< "GSTREAMER PIPE=[" << pipeline.c_str()<<"]"<<std::endl;
-    if (error) {
+    std::cout << "GSTREAMER PIPE=[" << pipeline.c_str() << "]" << std::endl;
+    if (error)
+    {
         qDebug() << "gst_parse_launch error: " << error->message;
         return;
     }
-    if(!m_gst_pipeline || !(GST_IS_PIPELINE(m_gst_pipeline))){
-        qDebug()<<"Cannot construct pipeline";
+    if (!m_gst_pipeline || !(GST_IS_PIPELINE(m_gst_pipeline)))
+    {
+        qDebug() << "Cannot construct pipeline";
         m_gst_pipeline = nullptr;
         return;
     }
-    gst_element_set_state (m_gst_pipeline, GST_STATE_PLAYING);
+    gst_element_set_state(m_gst_pipeline, GST_STATE_PLAYING);
     //
     // we pull data out of the gst pipeline as cpu memory buffer(s) using the gstreamer "appsink" element
-    m_app_sink_element=gst_bin_get_by_name(GST_BIN(m_gst_pipeline), "out_appsink");
+    m_app_sink_element = gst_bin_get_by_name(GST_BIN(m_gst_pipeline), "out_appsink");
     assert(m_app_sink_element);
-    m_pull_samples_run= true;
-    m_pull_samples_thread=std::make_unique<std::thread>(&GstRtpReceiver::loop_pull_samples, this);
+    m_pull_samples_run = true;
+    m_pull_samples_thread = std::make_unique<std::thread>(&GstRtpReceiver::loop_pull_samples, this);
 
-    qDebug()<<"GstRtpReceiver::start_receiving end";
+    qDebug() << "GstRtpReceiver::start_receiving end";
 }
 
 void GstRtpReceiver::stop_receiving()
 {
-    m_pull_samples_run=false;
-    if(m_pull_samples_thread){
+    m_pull_samples_run = false;
+    if (m_pull_samples_thread)
+    {
         m_pull_samples_thread->join();
-        m_pull_samples_thread=nullptr;
+        m_pull_samples_thread = nullptr;
     }
-    //TODO unref appsink reference
-    if (m_gst_pipeline != nullptr) {
+    // TODO unref appsink reference
+    if (m_gst_pipeline != nullptr)
+    {
         // Needed on jetson ?!
-        gst_element_send_event ((GstElement*)m_gst_pipeline, gst_event_new_eos ());
+        gst_element_send_event((GstElement *)m_gst_pipeline, gst_event_new_eos());
         gst_element_set_state(m_gst_pipeline, GST_STATE_PAUSED);
-        gst_element_set_state (m_gst_pipeline, GST_STATE_NULL);
-        gst_object_unref (m_gst_pipeline);
-        m_gst_pipeline=nullptr;
+        gst_element_set_state(m_gst_pipeline, GST_STATE_NULL);
+        gst_object_unref(m_gst_pipeline);
+        m_gst_pipeline = nullptr;
     }
 }
